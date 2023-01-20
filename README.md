@@ -2,7 +2,7 @@
 
 In this article we will use Yul to optimize our smart contracts to save on gas. We will look at three different smart contracts developed to play the classic game Rock, Paper, Scissors. One contract will be written purely in Solidity, another contract will be written in Solidity with inline assembly, and the last contract will be written purely in Yul. If you are unfamiliar with Yul, please check out the article I wrote on Yul to get a better understanding of what it is and how it works.
 
-Beginner’s Guide To Yul: https://medium.com/coinsbench/beginners-guide-to-yul-12a0a18095ef
+Beginner’s Guide To Yul: https://medium.com/coinsbench/beginners-guide-to-yul-12a0a18095ef <br>
 Github repository with Rock, Paper Scissors: https://github.com/marjon-call/Rock-Paper-Scissors
 
 Ok Let’s dive into the game’s structure!

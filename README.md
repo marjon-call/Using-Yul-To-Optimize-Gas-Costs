@@ -151,7 +151,7 @@ function playGame(uint8 _move) external payable {
 }
 ```
 
-Ok, so the first thing we are going to do is use ```require()``` statements to verify that we are playing by the rules. The first ```require()``` checks if the game is locked. The second ```require()``` checks that a game has been created. The third ```require()``` is checking if the player has sent enough ether to play the game. The last ```require()``` checks if the player has sent a valid move. After that we lock the game. Then, we have an if statement checking if Player 1 is making their move. We also check if they have made a move already by checking if the value of ```player1Move``` is set to 0 (remember that Solidity initializes values to 0). Notice that we check the player first. We deem that it is more likely that condition will not be satisfied, by doing so we save gas by not needing to check if Player 1 has made their move yet (less operations, less gas costs). If the conditions are satisfied we set Player 1’s move. Then we do the same checks for Player 2. If neither of the if statements are satisfied, we revert. Otherwise, we check if both moves have been made. If they have, we call ```evaluateGame()```. Finally, we unlock the game. 
+Ok, so the first thing we are going to do is use ```require()``` statements to verify that we are playing by the rules. The first ```require()``` checks if the game is locked. The second ```require()``` checks that a game has been created. The third ```require()``` is checking if the player has sent enough ether to play the game. The last ```require()``` checks if the player has sent a valid move. After that we lock the game. Then, we have an ```if``` statement checking if Player 1 is making their move. We also check if they have made a move already by checking if the value of ```player1Move``` is set to 0 (remember that Solidity initializes values to 0). Notice that we check the player first. We deem that it is more likely that condition will not be satisfied, by doing so we save gas by not needing to check if Player 1 has made their move yet (less operations, less gas costs). If the conditions are satisfied we set Player 1’s move. Then we do the same checks for Player 2. If neither of the ```if``` statements are satisfied, we revert. Otherwise, we check if both moves have been made. If they have, we call ```evaluateGame()```. Finally, we unlock the game. 
 
 Let’s look at what the storage looks like if Player 1 moves first with rock.
 
@@ -177,7 +177,79 @@ Now let's look at what happens in storage right before ```evaluateGame()``` is c
 
 The only difference here is in slot 3. We see that after ```player2```, ```player2Address``` is set to ```0x03``` (decimal 3), which is equal to scissors for our game. Also notice that in between ```gameInProgress``` and ```gameLength```, ```lockGame``` has been set to ```0x01``` (true as a boolean value).
 
+
 Now that we know how ```playGame()``` works, let’s see how ```evaluateGame()``` works.
+
+```
+function evaluateGame() private {
+
+
+    address _player1 = player1;
+    uint8 _player1Move = player1Move;
+    address _player2 = player2;
+    uint8 _player2Move = player2Move;
+
+
+    if (_player1Move == _player2Move) {
+        _player1.call{value: address(this).balance / 2}("");
+        _player2.call{value: address(this).balance}("");
+        emit TieGame(_player1, _player2);
+    } else if (
+    (_player1Move == 1 && _player2Move == 3 ) || 
+    (_player1Move == 2 && _player2Move == 1)  || 
+    (_player1Move == 3 && _player2Move == 2)) {
+    
+        _player1.call{value: address(this).balance}("");
+        emit GameOver(_player1, _player2);
+    } else {
+        _player2.call{value: address(this).balance}("");
+        emit GameOver(_player2, _player1);
+    }
+
+
+    gameInProgress = false;
+    player1 = address(0);
+    player2 = address(0);
+    player1Move = 0;
+    player2Move = 0;
+    gameStart = 0;
+}
+```
+
+The first thing we do in ```evaluateGame()``` is store storage variables to the stack. To understand why we are doing this let’s talk about the gas costs of storage for a moment. When referring to storage slots there are two different states; cold storage and warm storage. Cold storage is when a slot has not been previously accessed in the transaction (we already accessed these variables in ```playGame()```). Accessing cold storage is very expensive and it costs 2,100 gas. Once you access a storage slot in a transaction it is called warm storage. Accessing warm storage costs 100 gas, which is still pretty expensive. This is one of the advantages of packing variables, since you can access warm storage instead of cold storage even if it's your first time touching that particular variable. Accessing a variable from the stack can have different costs, but in the above example it is around 10 gas per read. This is a significant saving, so keep this in mind when writing smart contracts. 
+
+The next section of the code checks who wins the game. The first ```if``` statement is checking if there is a tie. In that case the contract sends half of the ether to both players. Next we use a lengthy ```if``` statement to check the situations that Player 1 wins. If any of those conditions are met we send Player 1 the ether. Otherwise, Player 2 must have won, and Player 2 gets rewarded the ether.
+
+The last section of this function resets the smart contract state to allow users to play a new game. If you call ```getStorage()```, you will see that the layout is the same as before we called ```creatGame()```. Notice how we are resetting slot 0 and slot 2 to being empty. This actually gives us a gas refund! For each slot set to 0, you receive 15,000 gas. However, the maximum refund is ⅕ of the transaction’s gas cost.
+
+The last function we need to go over in our Solidity contract is ```terminateGame()```.
+```
+function terminateGame() external {
+    require(gameStart + gameLength < block.number, "Game has time left.");
+    require(gameInProgress == true, "Game not started");
+
+
+
+
+    if(player1Move != 0) {
+        player1.call{value: address(this).balance}("");
+    } else if(player2Move != 0) {
+        player2.call{value: address(this).balance}("");
+    }
+
+
+    gameInProgress = false;
+    player1 = address(0);
+    player2 = address(0);
+    player1Move = 0;
+    player2Move = 0;
+    gameStart = 0;
+
+
+    emit GameTerminated(player1, player2);
+}
+```
+Our ```require()``` statements check if the game has gone past its allocated time, and whether there is a game to terminate. Next we check if either player has made a move yet. If they have, we give them the contracts ether. Finally we reset the contract state the way we did in ```evaluateGame()```.
 
 
 

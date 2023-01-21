@@ -60,11 +60,11 @@ Great, now let's look at the constructor.
 ```
 constructor() {
         gameCost = 0.05 ether;
-        gameLength = 28800; // 8 hours
+        gameLength = 28800;
     }
 
 ```
-All that we are doing here is setting ```gameCost``` to 0.05 ether, and setting ```gameLength``` to 28800 (8 hours).
+All that we are doing here is setting ```gameCost``` to 0.05 ether, and setting ```gameLength``` to 28800 blocks.
 
 
 Now let’s look at ```createGame()```.
@@ -81,7 +81,7 @@ function createGame(address _player1, address _player2) external {
 
 }
 ```
-First thing we do is check if a game is in progress. If it is, we revert. Otherwise,  we set our storage variables to set up our game.
+First thing we do is check if a game is in progress. If it is, we revert. Otherwise, we set our storage variables to set up our game.
 
 
 Let’s take a look at our storage to get a better understanding of what is happening under the hood. If you would like to follow along here is the function I am using to get the storage layout.
@@ -250,8 +250,6 @@ function terminateGame() external {
 }
 ```
 Our ```require()``` statements check if the game has gone past its allocated time, and whether there is a game to terminate. Next we check if either player has made a move yet. If they have, we give them the contracts ether. Finally we reset the contract state the way we did in ```evaluateGame()```.
-
-
 
 
 

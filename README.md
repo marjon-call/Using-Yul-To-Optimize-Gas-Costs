@@ -253,6 +253,118 @@ Our ```require()``` statements check if the game has gone past its allocated tim
 
 
 
+## Hybrid Contract
+Now let’s see how we can use Yul to save on some gas costs!
+
+The hybrid contract is going to have the same storage layout as our pure Solidity contract. The constructor will also remain the same.
+
+Here is our updated ```creatGame()``` function.
+```
+// allows users to create a new game// allows users to create a new game
+function createGame(address _player1, address _player2) external {
+    require(gameInProgress == false, "Game still in progress.");
+
+
+    assembly {
+        sstore(0, number())
+        sstore(2, _player1)
+        let glAndGip := or(0x0000000000000000000001000000000000000000000000000000000000000000, sload(3))
+        sstore(3, or(glAndGip, _player2))
+    }
+   
+   
+}
+
+
+```
+The ```require()``` is the same, but after that we dive into some Yul. First, we store the block number to storage slot 0. This is setting ```gameStart```. Next we store Player 1’s address in slot 2. After, we need to format our data to pack it into slot 3. Storage slot 3 is already storing ```gameLength``` at this time. So all we have to do it load slot 3 and ```or()``` it with a 32 byte value that has true set for ```gameInProgress``` (```0x0000000000000000000001000000000000000000000000000000000000000000
+```). Our last step is to ```or()``` this value with the address of Player 2 and store it. If you call ```getStorage()```, you will see the same results as when we use the Solidity smart contract. 
+
+
+```playGame()``` is going to look identical to as it did in the Solidity contract. However, ```evaluateGame()``` has one big change in it.
+```
+function evaluateGame() private {
+
+
+    address _player1 = player1;
+    uint8 _player1Move = player1Move;
+    address _player2 = player2;
+    uint8 _player2Move = player2Move;
+
+
+
+
+    if (_player1Move == _player2Move) {
+        _player1.call{value: address(this).balance / 2}("");
+        _player2.call{value: address(this).balance}("");
+        emit TieGame(_player1, _player2);
+    } else if ((_player1Move == 1 && _player2Move == 3 ) || (_player1Move == 2 && _player2Move == 1)  || (_player1Move == 3 && _player2Move == 2)) {
+        _player1.call{value: address(this).balance}("");
+        emit GameOver(_player1, _player2);
+    } else {
+        _player2.call{value: address(this).balance}("");
+        emit GameOver(_player2, _player1);
+    }
+
+
+    assembly {
+        sstore(0,0)
+        sstore(2, 0)
+        let gameLengthShifted := shr(mul(23,8), sload(3))
+        let gameLengthVal := shl(mul(23,8), gameLengthShifted)
+        sstore(3, gameLengthVal)
+    }
+   
+}
+
+
+```
+The first part of the contract is the same, but the last assembly block is where we optimize our code. We will go over how this saves us gas in a moment, but in the meantime let's finish going over the hybrid contract.
+
+Lastly, let's look at ```terminateGame()```.
+```
+function terminateGame() external {
+    require(gameStart + gameLength < block.number, "Game has time left.");
+    require(gameInProgress == true, "Game not started");
+
+
+
+
+    if(player1Move != 0) {
+        player1.call{value: address(this).balance}("");
+    } else if(player2Move != 0) {
+        player2.call{value: address(this).balance}("");
+    }
+   
+    assembly {
+        sstore(0,0)
+        sstore(2, 0)
+        let gameLengthShifted := shr(mul(23,8), sload(3))
+        let gameLengthVal := shl(mul(23,8), gameLengthShifted)
+        sstore(3, gameLengthVal)
+    }
+
+
+    emit GameTerminated(player1, player2);
+}
+
+
+```
+You probably notice the change is very similar. Again, we only change one section, the assembly code block. So why did we do this? Well the answer is, when we are clearing our storage slots this gives us the power to clear two packed variables with one operation instead of manually having to clear each one like in the Solidity contract.
+
+Now that we have two contracts let’s compare the gas costs of calling each one.
+
+|  Function  |   Solidity Min | Hybrid Min | Solidity Max  |  Hybrid Max | Solidity Avg  |  Hybrid Avg |  Avg Gas Savings  |
+|  :---   | :--- | :--- |  :--- |   :--- |   :--- |   :--- |   :--- | 
+|   ```createGame()``` |  72,362  | 71,954  |   72,362 |  71,954  |  72,362 | 71,954 |  592   |
+|   ```playGame()```  |  32,907 | 32,818  |   52,085  |  50,853 |  37,858  |  37,298 |  560 |
+|   ```terminateGame()```  |  32,279 |  31,382  |   40,473  |  39,352  |  36,882  |  35,911  |  971  |
+
+
+
+We made every function call less expensive, including deployment costs (1,240,438 vs 1,171912)! It is also worth noting that for ```playGame()```, if the second player is calling the function it calls ```evaluateGame()```. So the 1,232 gas difference between both max’s gas is a big deal for users.
+
+Now that we wrapped up this section we are ready to write our contract purly in Yul!
 
 
 

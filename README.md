@@ -466,6 +466,10 @@ code {
 ```code{}``` is the code we will be running, we will wrap the rest of our code within it.  ```calldataload(0)``` is loading the first 32 bytes of call data. Then we are shifting right by 28 bytes to isolate the function selector.
 
 
+One great operation in Yul that is not allowed in solidity is the ```switch{}``` statement. We are using a switch statement to tell what function is being called. Notice the first case, ```0xa6f979ff
+``` is the selector of ```createGame()```. The first thing we do inside our first case is check if a game is in progress. We do this by loading slot 3 to the stack, to avoid using another ```sload()``` later on. Then we are shifting ```slot3``` right by 21 bytes to format ```gameInProgress``` to the 32nd byte. Next, we use a single byte mask to isolate our variable. Then we check if it is 1 (true in Yul) and revert if that condition is satisfied. Next, we load the rest of our calldata. After that we use ```and()``` and a mask to isolate our addresses and  we assign them to variables on the stack. We then store the block number for ```gameStart``` and ```address1``` for ```player1```. Lastly, we are setting ```gameInProgress``` to true by using ```or()``` with ```slot3``` and ```0x0000000000000000000001000000000000000000000000000000000000000000```. We are then using one more ```or()``` to pack in ```address2```, and then storing those values to slot 3.
+
+
 
 
 

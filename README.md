@@ -367,6 +367,106 @@ We made every function call less expensive, including deployment costs (1,240,43
 Now that we wrapped up this section we are ready to write our contract purly in Yul!
 
 
+## Yul
+I want to start this section off by saying if you are following along, I recommend you use remix. Hardhat does not support pure Yul contracts, so you will have issues compiling your smart contract. Additionally, when working with a contract purely written in Yul, you can not just call a function like you would in Solidity. For example, instead of calling ```playGame()``` you would have to structure your call data manually and call the function selector ```0x985d4ac3```. So first let’s look at how we need to structure our calldata so we can call our contract.
+
+```createGame()```’s function selector is ```0xa6f979ff```. If you do not remember how to derive a function selector, please check out my “Beginner's Guide to Yul,” which is linked at the beginning of this article. Next, we need to look at how we pass our two address arguments from before. If you recall, memory works in serieses of 32 bytes. So you need to format both addresses from 20 bytes to 32 bytes by padding the left side with 12 empty bytes. Here is an example of what our calldata will look like: ```0xa6f979ff0000000000000000000000005b38da6a701c568545dcfcb03fcb875f56beddc4000000000000000000000000ab8483f64d9c6d1ecf9b849ae677dd3315835cb2```
+```Function Selector```: ```0xa6f979ff```
+```_player1```: ```0000000000000000000000005b38da6a701c568545dcfcb03fcb875f56beddc4```
+```_player2```: ```000000000000000000000000ab8483f64d9c6d1ecf9b849ae677dd3315835cb2```
+
+```playGame()``` is a little bit simpler because we only have one variable. Although it is a ```uint8```, since there's only one variable, and we are not packing it, it takes up 32 bytes. Here is what our calldata looks like if we use rock: ```0x985d4ac30000000000000000000000000000000000000000000000000000000000000001```
+```Function Selector```: ```0x985d4ac3```
+```_move```: ```0000000000000000000000000000000000000000000000000000000000000001```
+
+Last is ```terminateGame()```. It has no parameters so we only need to use the function selector for our calldata: ```0x97661f31```
+
+Great, now we are ready to dive into the code!
+
+```
+object "RockPaperScissorsYul" {
+
+
+    code {
+        sstore(1, 0xB1A2BC2EC50000)
+        sstore(3, 0x000000000000000B400000000000000000000000000000000000000000000000)
+        datacopy(0, dataoffset("runtime"), datasize("runtime"))
+        return(0, datasize("runtime"))
+    }
+
+
+    object "runtime" {
+
+
+        // Storage Layout:
+        // slot 0 : gameStart
+        // slot 1 : gameCost
+        // slot 2 : bytes 13 - 32 : player1
+        // slot 2 : bytes 12 : player1Move
+        // slot 3 : bytes 13 - 32 : player2
+        // slot 3 : bytes 12 : player2Move
+        // slot 3 : bytes 11 : gameInProgress
+        // slot 3 : bytes 10  : lockGame
+        // slot 3 : bytes 9 - 8 : gameLength
+
+
+        // rest of code
+    }
+}
+```
+
+```object "RockPaperScissorsYul.sol" {}``` is declaring our smart contract. All code will run within it. The first ```code {}``` is what a constructor would be in solidity. Inside we are storing ```gameCost``` as 0.05 ether in slot 1. Then, we are storing ```gameLength```. Notice I set a different value this time, feel free to set it to whatever you prefer. The next two lines are copying the runtime code and returning it. Next, ```object "runtime" {}``` is where we put our code that we want to call at runtime. Finally, I put the storage layout. I recommend doing this when writing contracts in Yul, because it helps you keep track of where all of your variables are stored.
+
+Since this code is long and formatted differently then Solidity, we will be going over it in chunks.
+```
+code {
+            let callData := calldataload(0)
+            let selector := shr(0xe0, callData)
+
+
+            switch selector
+
+
+            // createGame(address, address)
+            case 0xa6f979ff {
+
+
+                // get gameInProgress from storage
+                let gameInProgress := and(0xff, shr( mul( 21, 8), sload(3) ) )
+                // if game in progress set, revert
+                if eq(gameInProgress, 1) {
+                    revert(0,0)
+                }
+
+
+                // copies calldata to memory without function selector
+                calldatacopy(0, 4, calldatasize())
+                // gets address 1 & 2
+                let address1 := and(0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff, mload(0x00))
+                let address2 := and(0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff, mload(0x20))
+
+
+                // stores block of game start & player1 to storage
+                sstore(0, number())
+                sstore(2, address1)
+
+
+                // packs gameLength, gameInProgress, and player2 into slot 3
+                let gameLengthShifted := shr(mul(23,8), sload(3))
+                let gameLengthVal := shl(mul(23,8), gameLengthShifted)
+                let glAndGip := or(0x0000000000000000000001000000000000000000000000000000000000000000, gameLengthVal)
+                sstore(3, or(glAndGip, address2))
+
+
+            }
+            // more cases
+}
+```
+
+```code{}``` is the code we will be running, we will wrap the rest of our code within it.  ```calldataload(0)``` is loading the first 32 bytes of call data. Then we are shifting right by 28 bytes to isolate the function selector.
+
+
+
 
 
 

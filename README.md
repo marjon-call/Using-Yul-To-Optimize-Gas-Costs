@@ -694,7 +694,7 @@ function evaluateGame() {
 
 
     // gets player 1 move and player 2 move from storage
-    let player1Move := 0xff, shr( mul(20, 8), slot2 )
+    let player1Move := shr( mul(20, 8), slot2 )
     let player2Move := and(0xff, shr( mul(20, 8), slot3 ) )
 
 
@@ -771,6 +771,39 @@ Our last section of the Yul contract is the ```resetGame()``` function.
 It looks the same as how we reset the game in the Hybrid contract so nothing should surprise you here. This wraps up our section on the Yul Contract!
 
 
+## Conclusion
+Now that we know how to write a smart contract with Yul, let’s see if it actually saves us any gas.
+
+|   Function |  Min  |   Max  |   Avg  |
+|  :---   | :--- | :--- | :--- |
+|   ```createGame()```  | 71,348 | 71,348 | 71,348 |
+|   ```playGame()```  | 31,372 | 39,708 | 35,540 |
+|   ```terminateGame()```  | 29,372 | 29,372 | 29,372 |
+|   Deployment  | 337,020 | 337,020 | 337,020 |
+
+
+Now let’s compare these numbers to our Solidity and Hybrid contracts!
+
+
+|   Function |  Solidity |   Hybrid  |   Yul  |  Yul Savings vs Solidity |   Yul Savings vs Hybrid |
+|  :---   | :--- | :--- | :--- | :--- | :--- |
+|   ```createGame()```  | 72,362 | 71,954 | 71,348 | 1,014  |  606  |
+|   ```playGame()```  | 37,858 | 37,298 | 35,540 |  2,318  |  1,758  |
+|   ```terminateGame()```  | 36,882 | 35,911 | 29,372 |  7,510  |  6,539  |
+|   Deployment  | 1,240,438 | 1,171,912 | 337,020 |  903,418  |  834,892  |
+
+ Wow! As you can see by writing a smart contract purely in Yul you can save you and your users  an extensive amount on gas costs! 
+
+This wraps up our tutorial! Writing smart contracts in Yul is an advanced topic, and if you made it to the end congratulations on writing your first smart contract entirely in Yul! I hope this helped give you a better understanding of how Yul and the EVM works. 
+
+For more information on Opcodes and their gas costs check out these resources: <br>
+Opcodes: https://ethereum.org/en/developers/docs/evm/opcodes/ <br>
+EVM insight: https://github.com/wolflo/evm-opcodes/blob/main/gas.md#a6-sload <br>
+Gas Refunds: https://eips.ethereum.org/EIPS/eip-3529 <br>
+
+If you have any questions, or would like to see me make a tutorial on a different topic please leave a comment below.
+
+If you would like to support me making tutorials, here is my Ethereum address: 0xD5FC495fC6C0FF327c1E4e3Bccc4B5987e256794.
 
 
 

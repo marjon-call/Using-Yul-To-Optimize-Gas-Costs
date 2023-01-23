@@ -470,8 +470,305 @@ One great operation in Yul that is not allowed in solidity is the ```switch{}```
 ``` is the selector of ```createGame()```. The first thing we do inside our first case is check if a game is in progress. We do this by loading slot 3 to the stack, to avoid using another ```sload()``` later on. Then we are shifting ```slot3``` right by 21 bytes to format ```gameInProgress``` to the 32nd byte. Next, we use a single byte mask to isolate our variable. Then we check if it is 1 (true in Yul) and revert if that condition is satisfied. Next, we load the rest of our calldata. After that we use ```and()``` and a mask to isolate our addresses and  we assign them to variables on the stack. We then store the block number for ```gameStart``` and ```address1``` for ```player1```. Lastly, we are setting ```gameInProgress``` to true by using ```or()``` with ```slot3``` and ```0x0000000000000000000001000000000000000000000000000000000000000000```. We are then using one more ```or()``` to pack in ```address2```, and then storing those values to slot 3.
 
 
+Now, let's look at the second switch case, ```playGame()```.
+```
+// playGame(uint8)
+case 0x985d4ac3 {
 
 
+    calldatacopy(0, 4, calldatasize())
+
+
+    // stores move and slot variables to stack
+    let move := mload(0x00)
+    let slot2 := sload(2)
+    let slot3 := sload(3)
+   
+   
+   
+    // get lockGame from storage
+    let lockGame := and( 0xff, shr( mul(22, 8), slot3) )
+    // checks game is not locked
+    if eq(lockGame, 1) {
+        revert(0,0)
+    }
+
+
+
+
+    // get gameInProgress from storage
+    let gameInProgress := and(0xff, shr( mul( 21, 8), slot3 ) )
+    // if game in progress not set, revert
+    if iszero(gameInProgress) {
+        revert(0,0)
+    }
+
+
+    // if not enough ether sent revert
+    if gt(sload(1), callvalue()) {
+        revert(0,0)
+    }
+
+
+
+
+    // if invalid move revert
+    if lt(move, 1) {
+        revert(0,0)
+    }
+
+
+    // if invalid move revert
+    if gt(move, 3) {
+        revert(0,0)
+    }
+   
+
+
+    // gets player 1 move and player 2 move from storage
+    let player1Move := shr( mul(20, 8), slot2 )
+    let player2Move := and(0xff, shr( mul(20, 8), slot3 ) )
+
+
+    // get player1 and player2
+    let player1 := and(0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff,  slot2 )
+    let player2 := and(0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff,  slot3 )
+
+
+
+
+    // checks if player1 and move made already, else sets player1Move
+    if eq(caller(), player1) {
+        if gt(player1Move, 0) {
+            revert(0,0)
+        }
+
+
+        let moveShifted := shl( mul(20, 8), move)
+        sstore(2, or(moveShifted, slot2) )
+
+
+        // checks if both players have made a move
+        if gt(player2Move, 0) {
+
+
+            // lock from reentrancy
+            sstore(3, or(0x0000000000000000000100000000000000000000000000000000000000000000, sload(3) ))
+
+
+            evaluateGame()
+
+
+            // unlock from reentrancy
+            sstore(3, and(0xffffffffffffffffff00ffffffffffffffffffffffffffffffffffffffffffff, sload(3)))
+            stop()
+        }
+
+
+    }
+
+
+   
+
+
+    // checks if player2 and move made already, else sets player2Move
+    if eq(caller(), player2) {
+        if gt(player2Move, 0)  {
+            revert(0,0)
+        }
+       
+        let moveShifted := shl( mul(20, 8), move)
+
+
+        let newSlot3Value := or(moveShifted, slot3)
+       
+
+
+        // checks if both players have made a move
+        if gt(player1Move, 0) {
+            sstore(3, or(0x0000000000000000000100000000000000000000000000000000000000000000, newSlot3Value) )
+            evaluateGame()
+
+
+            // unlock from reentrancy
+            sstore(3, and(0xffffffffffffffffff00ffffffffffffffffffffffffffffffffffffffffffff, sload(3)))
+
+
+            stop()
+        }
+
+
+        // store new slot 3 value
+        sstore(3, newSlot3Value)
+    }
+
+
+}
+```
+First thing we do is load in the calldata to memory, and set move to a stack variable. Next, we store slots 2 & 3 as stack variables, as well. The next series of ```if``` statements are our ```require()``` statements from Solidity. The first one is checking if the game is locked. We do this by shifting slot 3 by 22 bytes then masking one byte. We do a similar process to check if a game is in progress yet. The next check is looking to see if the player has sent enough ether to the contract. The last two checks verify that the move is a proper move we can make. Now that we know the caller followed the rules of the game, we need to get the player’s moves. For ```player1Move``` we just need to shift off the address of Player 1 by shifting right 20 bytes. For ```player2Move``` we start with the same operation but then need to use an ```and()``` with a mask. We need this extra operation because slot3 packs extra variables into the slot. Next, we get both player addresses by using a mask and ```and()```.
+
+Now we need to see which player is calling the contract. First we check if Player 1 is attempting to make their move. If the caller is Player 1, we need to verify that they have not made a move already. If they have, we revert. Otherwise, we need to format our move so that it is in the proper location of the memory series we are about to store. Then we store our move to slot 2, and check if Player 2 has made their move yet. If they have, we need to lock our contract from reentrancy. Then we call ```evaluateGame()```, which we will go over in just a moment. After  ```evaluateGame()``` runs, we unlock our contract and use a ```stop()``` to end the execution of the function call. If Player 2 was the one who called the contract, we again check that they have not made a move yet and format our ```move``` variable. In order to prevent an unnecessary ```sload()```, we store our new value for slot 3 as a stack variable. After we check if Player 1 has made their move, we use an ```or()``` with the value to lock the game and ```newSlot3Value```, and store that value to slot 3. Again, we call ```newSlot3Value```, unlock the contract, and stop execution. However, if Player 1 has not made a move yet, instead we store ```newSlot3Value``` to slot 3 without locking the contract.
+
+
+Before we look at ```evaluateGame()```, let’s first look at our last case for the ```switch``` statement, ```terminateGame()```.
+```
+// terminateGame()
+case 0x97661f31 {
+
+
+    let slot3 := sload(3)
+    let slot2 := sload(2)
+
+
+    // gets gameStart and gameLength from storage
+    let gameStart := sload(0)
+    let gameLength := shr(mul(23,8), slot3)
+
+
+    // checks if block number is greater than gameStart + gameLength, else reverts
+    if iszero( gt( number(), add(gameStart, gameLength)) ) {
+        revert(0,0)
+    }
+
+
+    // get gameInProgress from storage
+    let gameInProgress := and(0xff, shr( mul( 21, 8), slot3 ) )
+
+
+    // if game in progress not set, revert
+    if iszero(gameInProgress) {
+        revert(0,0)
+    }
+
+
+    // loads player1 move, if the move is made, then transfer player 1 their ether back
+    let player1Move := shr( mul(20, 8), slot2 )
+    if iszero( eq(player1Move, 0) )  {
+        let player1 := and(0xffffffffffffffffffffffffffffffffffffffff , slot2)
+        pop( call(gas(), player1, selfbalance(), 0, 0, 0, 0) )
+
+
+	  resetGame()
+	  stop()
+    }
+
+
+    // loads player2 move, if the move is made, then transfer player 2 their ether back
+    let player2Move := and(0xff, shr( mul(20, 8), slot3 ) )
+    if iszero( eq(player1Move, 0) )  {
+        let player2 := and(0xffffffffffffffffffffffffffffffffffffffff , slot3)
+        pop( call(gas(), player2, selfbalance(), 0, 0, 0, 0) )
+
+
+	  resetGame()
+	  stop()
+    }
+
+
+	resetGame()
+
+
+   
+}
+
+
+default {
+    revert(0,0)
+}
+
+
+```
+The first step is to load slot 2 & 3 to stack variables again. Then we get ```gameStart``` by loading slot 0, and we get ```gameLength``` by shifting ```slot3``` right by 23 bytes to isolate our variable. The first ```if``` is checking that the current block is larger than the sum of ```gameStart``` and ```gameLength```. If it isn’t we revert. Otherwise, we move on to check if a game is in progress exactly how we did in ```playGame()```. Now we need to check if either player has made a move yet. We start with Player 1, and if Player 1 has made a move we send them the contracts ether with an empty call to their address and passing ```selfbalance()``` as the ```msg.value```. We then call ```resetGame()```, which we will go over later, and stop execution. If Player 1 has not made a move, then we perform the same operation for Player 2. If neither player has made a move, we simply call ```resetGame()```. The last case is the default. We choose to revert because that means somebody called our contract without using a proper function selector.
+
+
+Ok, we are finally ready to go over ```evaluateGame()```.
+```
+
+
+// evaluate game function
+function evaluateGame() {
+
+
+    let slot2 := sload(2)
+    let slot3 := sload(3)
+
+
+    // gets player 1 move and player 2 move from storage
+    let player1Move := 0xff, shr( mul(20, 8), slot2 )
+    let player2Move := and(0xff, shr( mul(20, 8), slot3 ) )
+
+
+    let player1 := and(0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff,  slot2 )
+    let player2 := and(0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff,  slot3 )
+
+
+    // if tie players split the pot
+    if eq(player1Move, player2Move) {
+        pop( call(gas(), player1, div(selfbalance(), 2), 0, 0, 0, 0) )
+        pop( call(gas(), player2, selfbalance(), 0, 0, 0, 0) )
+        resetGame()
+        leave
+    }
+
+
+    // if player1 moves 1 and player2 moves 3, player1 wins, else player2 wins
+    if eq(player1Move, 1) {
+        if eq(player2Move, 3) {
+            pop( call(gas(), player1, selfbalance(), 0, 0, 0, 0) )
+            resetGame()
+            leave
+        }
+        pop( call(gas(), player2, selfbalance(), 0, 0, 0, 0) )
+        resetGame()
+        leave
+    }
+
+
+    // if player1 moves 2 and player2 moves 1, player1 wins, else player2 win
+    if eq(player1Move, 2) {
+        if eq(player2Move, 1) {
+            pop( call(gas(), player1, selfbalance(), 0, 0, 0, 0) )
+            resetGame()
+            leave
+        }
+        pop( call(gas(), player2, selfbalance(), 0, 0, 0, 0) )
+        resetGame()
+        leave
+    }
+
+
+    // if player1 moves 3 and player2 moves 2, player1 wins, else player2 win
+    if eq(player1Move, 3) {
+        if eq(player2Move, 2) {
+            pop( call(gas(), player1, selfbalance(), 0, 0, 0, 0) )
+            resetGame()
+            leave
+        }
+        pop( call(gas(), player2, selfbalance(), 0, 0, 0, 0) )
+        resetGame()
+        leave
+    }
+
+
+
+
+}
+```
+Notice how we have to declare a function. Only we can use this function inside our smart contract. The first thing the function does is load our storage slots to the stack once again. Then we get ```player1Move```, ```player2Move```, ```player1```, and ```player2``` as we have in previous functions. Next we check if the game was a tie. If it is, we split the ether between both players. Otherwise we do a series of checks to see who won. Since the checks look very similar we will go over the structure of them so you get the concept. What we are doing is checking Player 1’s move. Next we check if Player 2 made the move that would cause them to lose. If they have, we send the ether to Player 1, reset the game, and leave the function. Otherwise we send the ether to Player 2, reset the game, and leave the function.
+
+
+Our last section of the Yul contract is the ```resetGame()``` function.
+```
+// resets variables so a new game can be played
+            function resetGame() {
+                sstore(0,0)
+                sstore(2, 0)
+                let gameLengthShifted := shr(mul(23,8), sload(3))
+                let gameLengthVal := shl(mul(23,8), gameLengthShifted)
+                sstore(3, gameLengthVal)
+            }
+```
+It looks the same as how we reset the game in the Hybrid contract so nothing should surprise you here. This wraps up our section on the Yul Contract!
 
 
 
